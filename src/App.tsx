@@ -1,26 +1,17 @@
 import React from 'react';
-import logo from './logo.svg';
-import './App.css';
+import { Routes, Route } from 'react-router-dom';
+import TaskList from './features/tasks/components/pages/TaskList';
+import TaskDetail from './features/tasks/components/pages/TaskDetail';
+import ErrorBoundary from './features/tasks/components/ui/ErrorBoundary';
 
-function App() {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
-  );
-}
+const App: React.FC = () => (
+  <ErrorBoundary>
+    <Routes>
+      <Route path="/" element={<TaskList />} />
+      <Route path="/tasks" element={<TaskList />} />
+      <Route path="/task/:id" element={<TaskDetail />} />
+    </Routes>
+  </ErrorBoundary>
+);
 
 export default App;
