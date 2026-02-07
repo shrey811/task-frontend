@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useGetTasksQuery, useCreateTaskMutation, useUpdateTaskMutation, useDeleteTaskMutation, TaskResponse } from '../../redux/tasksApi';
 import { Task } from '../../../../types/task';
 import socket from '../../../../services/socket';
@@ -15,7 +15,7 @@ const ITEMS_PER_PAGE_DEFAULT = 10;
 const TaskList: React.FC = () => {
     const { data: tasks = [], isLoading, error } = useGetTasksQuery();
     const [searchQuery, setSearchQuery] = useState('');
-    const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
+    const [localTasks, setLocalTasks] = useState<Task[]>([]);
     const [modalIsOpen, setModalIsOpen] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -26,22 +26,43 @@ const TaskList: React.FC = () => {
     const [createTask] = useCreateTaskMutation();
     const [updateTask] = useUpdateTaskMutation();
     const [deleteTask] = useDeleteTaskMutation();
+    const isInitialized = useRef(false);
 
+    // Initialize localTasks from API data only once on mount
     useEffect(() => {
-        setLocalTasks(tasks);
+        if (!isInitialized.current && tasks.length > 0) {
+            setLocalTasks(tasks);
+            isInitialized.current = true;
+        }
     }, [tasks]);
 
     useEffect(() => {
         const handleTaskCreated = (newTask: Task) => {
+            console.log('🔔 Socket.IO: Received taskCreated event', newTask);
             setLocalTasks((prev) => {
-                if (prev.some((t) => t.id === newTask.id)) return prev;
+                // Check if task already exists to prevent duplicates
+                if (prev.some((t) => t.id === newTask.id)) {
+                    console.log('Task already exists, skipping duplicate');
+                    return prev;
+                }
                 const updated = [...prev, newTask];
                 updated.sort((a, b) => PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority]);
                 return updated;
             });
         };
         const handleTaskUpdated = (updatedTask: Task) => {
-            setLocalTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
+            console.log('🔔 Socket.IO: Received taskUpdated event', updatedTask);
+            setLocalTasks((prev) => {
+                const exists = prev.some((t) => t.id === updatedTask.id);
+                if (!exists) {
+                    // If task doesn't exist, add it (might be from another user)
+                    const updated = [...prev, updatedTask];
+                    updated.sort((a, b) => PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority]);
+                    return updated;
+                }
+                // Update existing task
+                return prev.map((t) => (t.id === updatedTask.id ? updatedTask : t));
+            });
         };
 
         socket.on('taskCreated', handleTaskCreated);
@@ -82,11 +103,8 @@ const TaskList: React.FC = () => {
         try {
             const response: TaskResponse = await createTask(formData).unwrap();
             toast.success(response.message);
-            setLocalTasks((prev) => {
-                const updated = [...prev, response.task];
-                updated.sort((a, b) => PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority]);
-                return updated;
-            });
+            // Don't manually add task here - let the socket event handle it
+            // This prevents duplicates when the backend emits the socket event
             setModalIsOpen(false);
         } catch (err: unknown) {
             const apiError = err as ApiError;
@@ -99,7 +117,8 @@ const TaskList: React.FC = () => {
         try {
             const response: TaskResponse = await updateTask({ id: editingTask.id, updates: formData }).unwrap();
             toast.success(response.message);
-            setLocalTasks((prev) => prev.map((t) => (t.id === response.task.id ? response.task : t)));
+            // Don't manually update here - let the socket event handle it
+            // This ensures consistency across all connected clients
             setModalIsOpen(false);
         } catch (err: unknown) {
             const apiError = err as ApiError;
